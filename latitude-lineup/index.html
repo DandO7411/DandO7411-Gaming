@@ -1,0 +1,497 @@
+This update completely changes the selection logic to make the game intentionally deceptive.
+
+Instead of picking four random cities, the game now sorts the entire database by latitude and selects a "window" of four cities that are adjacent in the rankings. This guarantees the options are always clustered within a few degrees of each other (e.g., comparing Paris, Seattle, Montreal, and Vancouver). It also flips a coin each round to ask for either furthest North or furthest South.
+
+I've also added a few extra cities (like Chicago, Vancouver, and Calgary) to create even tighter, more confusing matchups.
+
+### Replace your `latitude-lineup/index.html` with this updated code:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latitude Lineup</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --input-bg: #334155;
+            --card-bg: #0f172a;
+            --border-color: #334155;
+        }
+
+        body.light-mode {
+            --bg-color: #f1f5f9;
+            --panel-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --accent: #2563eb;
+            --accent-hover: #1d4ed8;
+            --success: #059669;
+            --danger: #dc2626;
+            --warning: #d97706;
+            --input-bg: #e2e8f0;
+            --card-bg: #f8fafc;
+            --border-color: #cbd5e1;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        header {
+            text-align: center;
+            padding: 15px 20px;
+            width: 100%;
+            background-color: var(--panel-bg);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            box-sizing: border-box;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header-title h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
+        .header-title .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-top: 2px; }
+
+        .header-controls { display: flex; gap: 10px; }
+
+        .container {
+            width: 90%;
+            max-width: 600px;
+            margin: 20px auto;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .screen {
+            background-color: var(--panel-bg);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            display: none;
+            text-align: center;
+        }
+
+        .screen.active { display: block; }
+
+        .stats-bar {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            font-weight: bold;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+        }
+
+        .question-box {
+            background-color: var(--input-bg);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 1.25rem;
+            font-weight: bold;
+        }
+
+        .options-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            background-color: var(--accent);
+            color: white;
+            border: none;
+            padding: 14px 16px;
+            border-radius: 6px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        button:hover { background-color: var(--accent-hover); }
+        button:active { transform: scale(0.98); }
+
+        .btn-large { width: 100%; padding: 14px; font-size: 1.05rem; margin-top: 10px; }
+        .btn-secondary { background-color: #475569; color: #fff; }
+        .btn-secondary:hover { background-color: #64748b; }
+        .btn-icon { padding: 8px 12px; font-size: 0.9rem; }
+
+        .results-list {
+            margin-top: 20px;
+            text-align: left;
+            background: var(--card-bg);
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            padding: 10px 20px;
+        }
+
+        .results-list h4 { margin-top: 5px; margin-bottom: 15px; color: var(--text-muted); }
+
+        .result-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .result-item:last-child { border-bottom: none; }
+        .correct-answer-text { color: var(--success); font-weight: bold; font-size: 1.4rem; margin-bottom: 5px; }
+        .wrong-answer-text { color: var(--danger); font-weight: bold; font-size: 1.4rem; margin-bottom: 5px; }
+
+        /* Modal Settings */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+        }
+
+        .modal.active { display: flex; }
+
+        .modal-content {
+            background: var(--panel-bg);
+            padding: 25px;
+            border-radius: 12px;
+            width: 85%;
+            max-width: 400px;
+            text-align: left;
+            border: 1px solid var(--border-color);
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-title">
+            <h1>Latitude Lineup</h1>
+            <div class="subtitle">Geographic Coordinate Trivia</div>
+        </div>
+        <div class="header-controls">
+            <button class="btn-secondary btn-icon" onclick="openSettings()">⚙️ Settings</button>
+            <button class="btn-secondary btn-icon" id="exit-btn" style="display:none;" onclick="exitToMenu()">🚪 Exit</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen active">
+            <h2>Welcome to Latitude Lineup</h2>
+            <p style="color: var(--text-muted); line-height: 1.6;">
+                Test your geographic intuition! You will be given four cities with remarkably similar latitudes. Your task is to pinpoint which one sits furthest North or South.
+            </p>
+            <p style="color: var(--text-muted); line-height: 1.6; margin-bottom: 25px;">
+                Watch out for common misconceptions!
+            </p>
+            <button class="btn-large" onclick="startGame(false)">Standard 5-Round Game</button>
+            <button class="btn-large btn-secondary" style="margin-top: 12px;" onclick="startGame(true)">Infinite Practice Mode</button>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <div class="stats-bar">
+                <span id="round-display">Round 1 / 5</span>
+                <span id="score-display">Score: 0</span>
+            </div>
+            
+            <div class="question-box" id="question-text">
+                Which of these cities is furthest North?
+            </div>
+
+            <div class="options-grid" id="options-container">
+                <!-- Buttons injected via JS -->
+            </div>
+        </div>
+
+        <!-- Round Over Screen -->
+        <div id="round-screen" class="screen">
+            <div id="round-outcome"></div>
+            <p id="round-points" style="font-size: 1.1rem; font-weight: bold; margin-bottom: 15px;"></p>
+            
+            <div class="results-list">
+                <h4>Actual Lineup (North to South):</h4>
+                <div id="lineup-display"></div>
+            </div>
+
+            <button class="btn-large" id="next-round-btn" style="margin-top: 20px;" onclick="nextRound()">Next Round</button>
+        </div>
+
+        <!-- Final Screen -->
+        <div id="final-screen" class="screen">
+            <h2>Game Complete!</h2>
+            <div style="font-size: 3rem; color: var(--accent); margin: 20px 0;" id="final-score">0</div>
+            <p style="color: var(--text-muted); margin-bottom: 30px;">Total Points Earned</p>
+            <button class="btn-large" onclick="exitToMenu()">Back to Main Menu</button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <h3 style="margin-top:0;">Settings</h3>
+            <div class="setting-row">
+                <span>Theme</span>
+                <button class="btn-secondary" id="theme-toggle-btn" onclick="toggleTheme()">🌙 Dark Mode</button>
+            </div>
+            <button class="btn-large" style="margin-top:15px;" onclick="closeSettings()">Close</button>
+        </div>
+    </div>
+
+    <script>
+        const cityDatabase = [
+            { name: "Reykjavik, Iceland", lat: 64.1466 },
+            { name: "Anchorage, USA", lat: 61.2181 },
+            { name: "Oslo, Norway", lat: 59.9139 },
+            { name: "Stockholm, Sweden", lat: 59.3293 },
+            { name: "Edinburgh, UK", lat: 55.9533 },
+            { name: "Moscow, Russia", lat: 55.7558 },
+            { name: "Berlin, Germany", lat: 52.5200 },
+            { name: "London, UK", lat: 51.5074 },
+            { name: "Calgary, Canada", lat: 51.0447 },
+            { name: "Vancouver, Canada", lat: 49.2827 },
+            { name: "Paris, France", lat: 48.8566 },
+            { name: "Seattle, USA", lat: 47.6062 },
+            { name: "Montreal, Canada", lat: 45.5017 },
+            { name: "Venice, Italy", lat: 45.4408 },
+            { name: "Toronto, Canada", lat: 43.6510 },
+            { name: "Rome, Italy", lat: 41.9028 },
+            { name: "Chicago, USA", lat: 41.8781 },
+            { name: "New York City, USA", lat: 40.7128 },
+            { name: "Madrid, Spain", lat: 40.4168 },
+            { name: "Beijing, China", lat: 39.9042 },
+            { name: "Tokyo, Japan", lat: 35.6762 },
+            { name: "Los Angeles, USA", lat: 34.0522 },
+            { name: "Atlanta, USA", lat: 33.7490 },
+            { name: "Cairo, Egypt", lat: 30.0444 },
+            { name: "Houston, USA", lat: 29.7604 },
+            { name: "Miami, USA", lat: 25.7617 },
+            { name: "Dubai, UAE", lat: 25.2048 },
+            { name: "Mexico City, Mexico", lat: 19.4326 },
+            { name: "Mumbai, India", lat: 19.0760 },
+            { name: "Bangkok, Thailand", lat: 13.7563 },
+            { name: "Bogota, Colombia", lat: 4.7110 },
+            { name: "Singapore, Singapore", lat: 1.3521 },
+            { name: "Nairobi, Kenya", lat: -1.2864 },
+            { name: "Jakarta, Indonesia", lat: -6.2088 },
+            { name: "Lima, Peru", lat: -12.0464 },
+            { name: "Rio de Janeiro, Brazil", lat: -22.9068 },
+            { name: "Sao Paulo, Brazil", lat: -23.5505 },
+            { name: "Johannesburg, South Africa", lat: -26.2041 },
+            { name: "Brisbane, Australia", lat: -27.4698 },
+            { name: "Sydney, Australia", lat: -33.8688 },
+            { name: "Cape Town, South Africa", lat: -33.9249 },
+            { name: "Buenos Aires, Argentina", lat: -34.6037 },
+            { name: "Melbourne, Australia", lat: -37.8136 },
+            { name: "Wellington, New Zealand", lat: -41.2865 },
+            { name: "Punta Arenas, Chile", lat: -53.1500 }
+        ];
+
+        let currentRound = 1;
+        const totalRounds = 5;
+        let totalScore = 0;
+        let isPracticeMode = false;
+        let currentOptions = [];
+        let correctCity = null;
+        let isAskingNorth = true;
+
+        function showScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            
+            const exitBtn = document.getElementById('exit-btn');
+            if (id === 'start-screen') {
+                exitBtn.style.display = 'none';
+            } else {
+                exitBtn.style.display = 'block';
+            }
+        }
+
+        // Helper to format latitude coordinates beautifully
+        function formatLat(lat) {
+            const direction = lat >= 0 ? "N" : "S";
+            return `${Math.abs(lat).toFixed(2)}° ${direction}`;
+        }
+
+        // Shuffle array using Fisher-Yates
+        function shuffle(array) {
+            let currentIndex = array.length, randomIndex;
+            while (currentIndex !== 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+            return array;
+        }
+
+        function generateRound() {
+            // Sort database from North to South to group nearby latitudes
+            const sortedDB = [...cityDatabase].sort((a, b) => b.lat - a.lat);
+            
+            // Pick a random starting index, ensuring we have 4 adjacent cities
+            const maxStartIndex = sortedDB.length - 4;
+            const startIndex = Math.floor(Math.random() * (maxStartIndex + 1));
+            
+            currentOptions = sortedDB.slice(startIndex, startIndex + 4);
+            
+            // Randomly decide if asking for North or South
+            isAskingNorth = Math.random() > 0.5;
+            
+            if (isAskingNorth) {
+                // Highest latitude value is furthest North
+                correctCity = currentOptions.reduce((prev, current) => (prev.lat > current.lat) ? prev : current);
+            } else {
+                // Lowest latitude value is furthest South
+                correctCity = currentOptions.reduce((prev, current) => (prev.lat < current.lat) ? prev : current);
+            }
+
+            updateGameUI();
+            showScreen('game-screen');
+        }
+
+        function updateGameUI() {
+            if (isPracticeMode) {
+                document.getElementById('round-display').innerText = `Round ${currentRound} (Practice)`;
+            } else {
+                document.getElementById('round-display').innerText = `Round ${currentRound} / ${totalRounds}`;
+            }
+            
+            document.getElementById('score-display').innerText = `Score: ${totalScore}`;
+
+            // Update the question text based on direction
+            document.getElementById('question-text').innerText = isAskingNorth 
+                ? "Which of these cities is furthest North?" 
+                : "Which of these cities is furthest South?";
+
+            const container = document.getElementById('options-container');
+            container.innerHTML = '';
+            
+            // Randomize the order the 4 buttons appear so the answer isn't predictable
+            const displayOptions = shuffle([...currentOptions]);
+            
+            displayOptions.forEach(city => {
+                let btn = document.createElement('button');
+                btn.innerText = city.name;
+                btn.onclick = () => checkAnswer(city);
+                container.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(selectedCity) {
+            const isCorrect = selectedCity.name === correctCity.name;
+            const outcomeDiv = document.getElementById('round-outcome');
+            const pointsDiv = document.getElementById('round-points');
+            const directionWord = isAskingNorth ? "North" : "South";
+            
+            if (isCorrect) {
+                totalScore += 1000;
+                outcomeDiv.innerHTML = `<div class="correct-answer-text">Correct!</div>`;
+                pointsDiv.innerText = "+1000 Points";
+                pointsDiv.style.color = "var(--success)";
+            } else {
+                outcomeDiv.innerHTML = `<div class="wrong-answer-text">Incorrect!</div>
+                                        <div style="margin-bottom: 10px;">You chose ${selectedCity.name}. The furthest ${directionWord} was ${correctCity.name}.</div>`;
+                pointsDiv.innerText = "+0 Points";
+                pointsDiv.style.color = "var(--text-muted)";
+            }
+
+            // Always display lineup North to South for consistency
+            const sortedOptions = [...currentOptions].sort((a, b) => b.lat - a.lat);
+            const lineupContainer = document.getElementById('lineup-display');
+            lineupContainer.innerHTML = '';
+
+            sortedOptions.forEach((city, index) => {
+                let item = document.createElement('div');
+                item.className = 'result-item';
+                
+                // Highlight the correct answer in the list
+                if (city.name === correctCity.name) {
+                    item.innerHTML = `<span><strong>${index + 1}. ${city.name}</strong> 📍</span> <span><strong>${formatLat(city.lat)}</strong></span>`;
+                    item.style.color = "var(--accent)";
+                } else {
+                    item.innerHTML = `<span>${index + 1}. ${city.name}</span> <span>${formatLat(city.lat)}</span>`;
+                }
+                lineupContainer.appendChild(item);
+            });
+
+            if (!isPracticeMode && currentRound >= totalRounds) {
+                document.getElementById('next-round-btn').innerText = "See Final Score";
+            } else {
+                document.getElementById('next-round-btn').innerText = "Next Round";
+            }
+            
+            showScreen('round-screen');
+        }
+
+        function nextRound() {
+            if (!isPracticeMode && currentRound >= totalRounds) {
+                document.getElementById('final-score').innerText = totalScore;
+                showScreen('final-screen');
+            } else {
+                currentRound++;
+                generateRound();
+            }
+        }
+
+        function startGame(practice) {
+            isPracticeMode = practice;
+            currentRound = 1;
+            totalScore = 0;
+            generateRound();
+        }
+
+        function exitToMenu() {
+            showScreen('start-screen');
+        }
+
+        /* Settings & Theme handling */
+        function openSettings() {
+            document.getElementById('settings-modal').classList.add('active');
+        }
+
+        function closeSettings() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        function toggleTheme() {
+            document.body.classList.toggle('light-mode');
+            const isLight = document.body.classList.contains('light-mode');
+            document.getElementById('theme-toggle-btn').innerText = isLight ? "☀️ Light Mode" : "🌙 Dark Mode";
+        }
+    </script>
+</body>
+</html>
+
+```
