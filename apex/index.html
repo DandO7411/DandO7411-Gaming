@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FH6 Eliminator Scout - Apex Hybrid v9.3</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --main: #caff03; --accent: #e529a1; --accent-light: rgba(229, 41, 161, 0.15); --bg: #0a0a0a; --panel: rgba(10, 2, 8, 0.96); }
+        body, html { margin: 0; padding: 0; height: 100%; background: var(--bg); font-family: 'Segoe UI', sans-serif; overflow: hidden; color: white; }
+        
+        /* v3 VISUAL IDENTITY: HOME MENU */
+        #mainMenu {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: url('image_67d672.png') center/cover no-repeat;
+            z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+
+        .bg-texture { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; opacity: 0.5; pointer-events: none; }
+
+        .menu-card {
+            background: rgba(0, 0, 0, 0.85); padding: 40px; border-radius: 4px;
+            border: 2px solid var(--accent); text-align: center; 
+            box-shadow: 0 0 60px rgba(229, 41, 161, 0.4);
+            position: relative; z-index: 10; backdrop-filter: blur(8px); width: 300px;
+        }
+        
+        .logo-large { width: 240px; margin-bottom: 25px; filter: drop-shadow(0 0 15px var(--main)); }
+
+        /* SIDEBAR PANEL */
+        .ui-container { position: absolute; top: 20px; left: 20px; z-index: 1000; display: none; width: 340px; max-height: calc(100vh - 40px); pointer-events: none; }
+        
+        .panel { 
+            background: var(--panel); backdrop-filter: blur(15px); 
+            border-left: 5px solid var(--accent); border-right: 2px solid var(--main);
+            padding: 15px; border-radius: 4px; pointer-events: auto; 
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+            display: flex; flex-direction: column; height: 100%; max-height: 90vh;
+        }
+
+        .panel-header { padding-bottom: 12px; border-bottom: 2px solid var(--main); display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
+        .logo-img { width: 40px; height: 40px; border: 1px solid var(--accent); }
+        .title-text { font-size: 0.8rem; margin: 0; color: var(--main); font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+
+        /* v3-STYLE MODE CONTROLS */
+        .panel-controls { display: flex; gap: 6px; margin-bottom: 15px; }
+
+        .tabs { display: flex; gap: 2px; background: #000; padding: 2px; margin-bottom: 15px; }
+        .tab-btn { flex: 1; padding: 10px; background: transparent; border: none; color: #555; font-size: 0.65rem; font-weight: 800; cursor: pointer; text-transform: uppercase; }
+        .tab-btn.active { background: var(--accent); color: white; }
+
+        .content-area { flex-grow: 1; overflow-y: auto; margin-bottom: 10px; min-height: 250px; padding-right: 5px; }
+        
+        .log-item { 
+            display: flex; align-items: center; justify-content: space-between; 
+            padding: 10px; margin-bottom: 5px; background: rgba(229, 41, 161, 0.08); 
+            font-size: 0.75rem; border-left: 3px solid var(--main); cursor: pointer;
+        }
+
+        #modeHUD {
+            position: absolute; top: 20px; left: 380px; z-index: 2000;
+            background: var(--panel); border: 1px solid var(--main); padding: 6px 15px;
+            font-weight: 900; font-size: 0.65rem; color: var(--main); text-transform: uppercase;
+            display: none; letter-spacing: 2px;
+        }
+
+        .m-btn { 
+            width: 100%; padding: 12px; border: 2px solid var(--accent); background: transparent; 
+            color: var(--accent); cursor: pointer; font-size: 0.7rem; font-weight: 800; 
+            text-transform: uppercase; transition: 0.2s; border-radius: 2px; margin-top: 5px;
+        }
+        .m-btn:hover { background: var(--accent); color: #fff; transform: skewX(-3deg); }
+        .m-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+        
+        .btn-main { border-color: var(--main); color: var(--main); }
+        .btn-main:hover { background: var(--main); color: #000; }
+
+        .avg-icon { 
+            background: #000; border: 2px solid var(--main); border-radius: 50%; 
+            color: white; font-weight: bold; display: flex; align-items: center; justify-content: center;
+        }
+
+        .modal {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 330px; background: var(--panel); border: 2px solid var(--main);
+            z-index: 10001; padding: 25px; display: none; border-radius: 4px; box-shadow: 0 0 100px #000;
+        }
+
+        #map { height: 100vh; width: 100vw; background: #000; visibility: hidden; }
+
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.4); filter: brightness(1.5); } 100% { transform: scale(1); } }
+        .pulse-active { animation: pulse 0.5s ease-out; }
+    </style>
+</head>
+<body>
+
+<div id="mainMenu">
+    <svg class="bg-texture" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polygon points="0,0 40,0 20,35" fill="rgba(229, 41, 161, 0.15)" />
+        <polygon points="100,0 55,0 85,45" fill="rgba(229, 41, 161, 0.12)" />
+        <polygon points="0,100 35,100 15,65" fill="rgba(229, 41, 161, 0.18)" />
+        <polygon points="45,15 75,55 25,55" fill="rgba(229, 41, 161, 0.08)" />
+    </svg>
+
+    <div class="menu-card">
+        <img src="image_67e8dc.jpg" class="logo-large">
+        <button class="m-btn btn-main" onclick="startGame()">Start Scouting</button>
+        <button class="m-btn" onclick="toggleModal('careerModal', true)">Archive</button>
+        <button class="m-btn" style="border-color:#333; color:#666;" onclick="toggleModal('settingsModal', true)">Config</button>
+    </div>
+</div>
+
+<div id="modeHUD">MODE: PLOT [Q]</div>
+
+<div id="settingsModal" class="modal">
+    <h2 style="color:var(--accent); text-transform: uppercase; margin-top: 0;">System Config</h2>
+    <div style="display:flex; justify-content:space-between; margin-bottom:15px; font-size:0.8rem; color:var(--main);">Labels <input type="checkbox" id="set-showLabels" checked onchange="refreshUI()"></div>
+    <div style="display:flex; justify-content:space-between; margin-bottom:15px; font-size:0.8rem; color:var(--main);">Saturation <input type="range" id="set-saturation" min="0" max="200" value="100" onchange="applyFilters()"></div>
+    <div style="display:flex; justify-content:space-between; margin-bottom:15px; font-size:0.8rem; color:var(--main);">Size <input type="range" id="set-size" min="15" max="40" value="26" onchange="refreshUI()"></div>
+    <button class="m-btn btn-main" onclick="toggleModal('settingsModal', false)">Apply</button>
+    <button class="m-btn" style="color:red; border-color:red; margin-top:15px;" onclick="clearAll()">Format Data</button>
+</div>
+
+<div id="careerModal" class="modal">
+    <h2 style="color:var(--accent); text-transform: uppercase; margin-top: 0;">Career Stats</h2>
+    <div id="careerStatsContent"></div>
+    <button class="m-btn" onclick="toggleModal('careerModal', false)">Close</button>
+</div>
+
+<div id="matchLogModal" class="modal">
+    <h2 style="color:var(--main); text-transform: uppercase; margin-top: 0;">Log Results</h2>
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+        <label style="font-size:0.7rem;">Rank: <input type="number" id="logRank" value="1" style="width:100%; background:#000; color:#fff; border:1px solid #444; padding:8px;"></label>
+        <label style="font-size:0.7rem;">KOs: <input type="number" id="logKOs" value="0" style="width:100%; background:#000; color:#fff; border:1px solid #444; padding:8px;"></label>
+        <label style="font-size:0.7rem;">Max Tier: <input type="number" id="logCar" value="1" style="width:100%; background:#000; color:#fff; border:1px solid #444; padding:8px;"></label>
+    </div>
+    <button class="m-btn btn-main" style="margin-top:20px;" onclick="saveMatchStats()">Archive Session</button>
+</div>
+
+<div id="map"></div>
+
+<div class="ui-container" id="gameUI">
+    <div class="panel">
+        <div class="panel-header">
+            <img src="image_67e8dc.jpg" class="logo-img">
+            <h1 class="title-text">APEX COMMAND</h1>
+        </div>
+
+        <div class="panel-controls">
+            <button class="m-btn active" id="btnPlot" onclick="setMode('PLOT')">Plot (Q)</button>
+            <button class="m-btn" id="btnEdit" onclick="setMode('EDIT')">Edit (W)</button>
+        </div>
+
+        <div class="tabs">
+            <button class="tab-btn active" id="tabPlan" onclick="setTab('plan')">Intel</button>
+            <button class="tab-btn" id="tabStats" onclick="setTab('stats')">Data</button>
+            <button class="tab-btn" id="tabScout" onclick="setTab('scout')">Apex</button>
+        </div>
+
+        <div id="planContent" class="content-area"></div>
+        <div id="statsContent" class="content-area" style="display:none;"></div>
+        <div id="scoutContent" class="content-area" style="display:none;">
+            <div id="apexStatus" style="font-family:monospace; font-size:0.65rem; color:#0f0; background:rgba(0,0,0,0.5); padding:12px; border:1px solid var(--accent); margin-bottom:10px;">> STANDBY...</div>
+            <button class="m-btn btn-main" onclick="calculateApex()">Calculate Start Vector</button>
+        </div>
+
+        <div style="display: flex; gap: 5px;">
+            <button class="m-btn btn-main" onclick="toggleModal('matchLogModal', true)">Log Game</button>
+            <button class="m-btn" style="border-color:#333; color:#555;" onclick="location.reload()">Exit</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const levelColors = {1:"#fff", 2:"#c1ffc1", 3:"#82ff82", 4:"#39ff14", 5:"#00f2ff", 6:"#0072ff", 7:"#7a00ff", 8:"#ff00d4", 9:"#ff0000", 10:"#ffcc00"};
+    let drops = JSON.parse(localStorage.getItem('fh6_apex_v9_3')) || [];
+    let stats = JSON.parse(localStorage.getItem('fh6_career_v9_3')) || { games: 0, wins: 0, totalKOs: 0, carSum: 0 };
+    let currentMode = 'PLOT'; 
+    let markers = {};
+    let apexMarker = null;
+
+    const map = L.map('map', { crs: L.CRS.Simple, minZoom: -2, zoomControl: false });
+    const bounds = [[0,0], [1000,1000]];
+    L.imageOverlay('fh6-map.jpg', bounds).addTo(map);
+    map.fitBounds(bounds);
+
+    function startGame() {
+        document.getElementById('mainMenu').style.display = 'none';
+        document.getElementById('map').style.visibility = 'visible';
+        document.getElementById('gameUI').style.display = 'block';
+        document.getElementById('modeHUD').style.display = 'block';
+        refreshUI();
+    }
+
+    // HOTKEY LOGIC SYNCED WITH BUTTONS
+    window.addEventListener('keydown', (e) => {
+        if(e.key.toLowerCase() === 'q') setMode('PLOT');
+        if(e.key.toLowerCase() === 'w') setMode('EDIT');
+    });
+
+    function setMode(m) {
+        currentMode = m;
+        const hud = document.getElementById('modeHUD');
+        hud.innerHTML = `MODE: ${m} [${m === 'PLOT' ? 'Q' : 'W'}]`;
+        hud.style.color = m === 'PLOT' ? 'var(--main)' : 'var(--accent)';
+        hud.style.borderColor = m === 'PLOT' ? 'var(--main)' : 'var(--accent)';
+        
+        // Update Button Active States
+        document.getElementById('btnPlot').classList.toggle('active', m === 'PLOT');
+        document.getElementById('btnEdit').classList.toggle('active', m === 'EDIT');
+    }
+
+    function toggleModal(id, show) { 
+        if(id === 'careerModal' && show) renderCareerStats();
+        document.getElementById(id).style.display = show ? 'block' : 'none'; 
+    }
+
+    function setTab(t) {
+        ['plan', 'stats', 'scout'].forEach(id => {
+            document.getElementById('tab' + id.charAt(0).toUpperCase() + id.slice(1)).classList.toggle('active', id === t);
+            document.getElementById(id + 'Content').style.display = id === t ? 'block' : 'none';
+        });
+        if(t === 'stats') renderDataStats();
+    }
+
+    map.on('click', (e) => {
+        if(currentMode !== 'PLOT') return;
+        openPicker(e.latlng.lat, e.latlng.lng);
+    });
+
+    function openPicker(lat, lng, dropId = null) {
+        const html = `<div class="lvl-picker" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 5px;">${Object.keys(levelColors).map(l => 
+            `<button style="border:none; padding:10px 0; cursor:pointer; font-weight:bold; border-radius:2px; background:${levelColors[l]}" onclick="processDrop(${lat}, ${lng}, ${l}, '${dropId}')">${l}</button>`
+        ).join('')}</div>`;
+        L.popup().setLatLng([lat, lng]).setContent(html).openOn(map);
+    }
+
+    window.processDrop = (lat, lng, lvl, dropId) => {
+        if(dropId && dropId !== 'null') {
+            const d = drops.find(x => x.id === dropId);
+            if(d) d.levels.push(lvl);
+        } else {
+            drops.push({ id: "d_" + Date.now(), lat, lng, levels: [lvl] });
+        }
+        localStorage.setItem('fh6_apex_v9_3', JSON.stringify(drops));
+        map.closePopup();
+        refreshUI();
+    };
+
+    function refreshUI() {
+        Object.values(markers).forEach(m => map.removeLayer(m));
+        markers = {};
+        const list = document.getElementById('planContent');
+        list.innerHTML = '';
+        const size = parseInt(document.getElementById('set-size').value);
+        const showLabels = document.getElementById('set-showLabels').checked;
+
+        drops.forEach((d, i) => {
+            const avg = (d.levels.reduce((a,b)=>a+b,0)/d.levels.length).toFixed(1);
+            const color = levelColors[Math.round(avg)];
+            const marker = L.marker([d.lat, d.lng], {
+                icon: L.divIcon({
+                    className: 'm-icon',
+                    html: `<div class="avg-icon" style="border-color:${color}; width:${size}px; height:${size}px; font-size:${size/2.5}px;">${showLabels ? avg : ''}</div>`,
+                    iconSize: [size, size], iconAnchor: [size/2, size/2]
+                })
+            }).addTo(map);
+
+            marker.on('click', (e) => {
+                if(currentMode === 'EDIT') {
+                    L.DomEvent.stopPropagation(e);
+                    openPicker(d.lat, d.lng, d.id);
+                }
+            });
+
+            markers[d.id] = marker;
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            item.innerHTML = `<span>#${i+1} (Avg T${avg})</span> <span style="color:var(--accent)" onclick="event.stopPropagation(); deleteDrop('${d.id}')">×</span>`;
+            item.onclick = () => {
+                map.flyTo([d.lat, d.lng], 1);
+                const el = marker.getElement();
+                if(el) { el.classList.remove('pulse-active'); void el.offsetWidth; el.classList.add('pulse-active'); }
+            };
+            list.appendChild(item);
+        });
+    }
+
+    function saveMatchStats() {
+        const rank = parseInt(document.getElementById('logRank').value);
+        stats.games++;
+        stats.totalKOs += parseInt(document.getElementById('logKOs').value);
+        stats.carSum += parseInt(document.getElementById('logCar').value);
+        if(rank === 1) stats.wins++;
+        localStorage.setItem('fh6_career_v9_3', JSON.stringify(stats));
+        toggleModal('matchLogModal', false);
+    }
+
+    function getStatsSummary() {
+        const rate = stats.games > 0 ? ((stats.wins/stats.games)*100).toFixed(1) : 0;
+        const avgC = stats.games > 0 ? (stats.carSum/stats.games).toFixed(1) : 0;
+        return `<div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+            <div style="background:#111; padding:10px; text-align:center;"><span style="color:var(--main); font-size:1.2rem; display:block;">${rate}%</span><small>Win Rate</small></div>
+            <div style="background:#111; padding:10px; text-align:center;"><span style="color:var(--main); font-size:1.2rem; display:block;">${stats.wins}</span><small>Wins</small></div>
+            <div style="background:#111; padding:10px; text-align:center;"><span style="color:var(--main); font-size:1.2rem; display:block;">${avgC}</span><small>Avg Tier</small></div>
+            <div style="background:#111; padding:10px; text-align:center;"><span style="color:var(--main); font-size:1.2rem; display:block;">${stats.totalKOs}</span><small>Total KOs</small></div>
+        </div><div style="text-align:center; font-size:0.6rem; color:#444; margin-top:10px;">GAMES TRACKED: ${stats.games}</div>`;
+    }
+
+    function renderCareerStats() { document.getElementById('careerStatsContent').innerHTML = getStatsSummary(); }
+    function renderDataStats() { document.getElementById('statsContent').innerHTML = getStatsSummary(); }
+
+    function calculateApex() {
+        if(drops.length < 2) { document.getElementById('apexStatus').innerHTML = "> ERR: LOW DATA"; return; }
+        let latW = 0, lngW = 0, totalW = 0;
+        drops.forEach(d => {
+            const avg = d.levels.reduce((a,b)=>a+b,0)/d.levels.length;
+            const weight = Math.pow(avg, 5);
+            latW += d.lat * weight; lngW += d.lng * weight; totalW += weight;
+        });
+        const aLat = latW / totalW; const aLng = lngW / totalW;
+        if(apexMarker) map.removeLayer(apexMarker);
+        apexMarker = L.circleMarker([aLat, aLng], { radius: 10, color: 'white', fillOpacity: 0.8 }).addTo(map);
+        map.flyTo([aLat, aLng], 0);
+        document.getElementById('apexStatus').innerHTML = `> APEX TARGET ACQUIRED.<br>> VECTOR [Y:${Math.round(aLat)} X:${Math.round(aLng)}]`;
+    }
+
+    function applyFilters() {
+        const sat = document.getElementById('set-saturation').value;
+        const img = document.querySelector('.leaflet-image-layer');
+        if(img) img.style.filter = `saturate(${sat}%)`;
+    }
+
+    window.deleteDrop = (id) => { if(confirm("Delete point?")) { drops = drops.filter(d => d.id !== id); localStorage.setItem('fh6_apex_v9_3', JSON.stringify(drops)); refreshUI(); } };
+    function clearAll() { if(confirm("WIPE DATA?")) { drops=[]; stats={games:0,wins:0,totalKOs:0,carSum:0}; localStorage.clear(); location.reload(); } }
+</script>
+</body>
+</html>
