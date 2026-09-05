@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coastline Catch</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/topojson-client@3"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;800&display=swap');
+
+    :root {
+      --bg-color: #0f172a;
+      --text-color: #f8fafc;
+      --accent: #38bdf8;
+      --map-fill: #1e293b;
+      --map-stroke: #0ea5e9;
+      --target-fill: #334155;
+      --input-bg: rgba(15, 23, 42, 0.8);
+      --panel-bg: rgba(30, 41, 59, 0.95);
+      --danger: #f43f5e;
+      --success: #10b981;
+    }
+
+    [data-theme="light"] {
+      --bg-color: #f8fafc;
+      --text-color: #0f172a;
+      --accent: #0284c7;
+      --map-fill: #e2e8f0;
+      --map-stroke: #ffffff;
+      --target-fill: #cbd5e1;
+      --input-bg: rgba(255, 255, 255, 0.8);
+      --panel-bg: rgba(241, 245, 249, 0.95);
+      --danger: #e11d48;
+      --success: #059669;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: 'Outfit', sans-serif;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      width: 100vw;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    #map-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      opacity: 0.1;
+      transition: opacity 1s ease;
+    }
+    
+    path {
+      fill: var(--map-fill);
+      stroke: var(--map-stroke);
+      stroke-width: 1px;
+      stroke-linejoin: round;
+      transition: fill 0.3s ease, stroke 0.3s ease;
+    }
+
+    .target-country { fill: var(--target-fill) !important; }
+
+    .screen {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .hidden {
+      opacity: 0;
+      pointer-events: none;
+      position: absolute;
+      transform: scale(0.95);
+    }
+
+    h1 { font-size: 4rem; font-weight: 800; margin-bottom: 0.5rem; letter-spacing: -1px; }
+    h2 { font-size: 2.5rem; margin-bottom: 1rem; }
+    p { font-size: 1.2rem; font-weight: 300; margin-bottom: 1.5rem; opacity: 0.8; }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 15px 40px;
+      margin: 10px;
+      font-size: 1.2rem;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    
+    [data-theme="light"] button { color: #fff; }
+    [data-theme="dark"] button { color: #0f172a; }
+
+    button:hover:not(:disabled) { transform: translateY(-3px); filter: brightness(1.1); }
+    button:disabled { background: gray; cursor: not-allowed; transform: none; }
+    
+    .btn-secondary {
+      background: transparent;
+      border: 2px solid var(--accent);
+      color: var(--text-color) !important;
+      box-shadow: none;
+    }
+
+    .btn-danger {
+      background: transparent;
+      border: 2px solid var(--danger);
+      color: var(--danger) !important;
+      padding: 10px 25px;
+      font-size: 1rem;
+    }
+    .btn-danger:hover { background: var(--danger); color: #fff !important; }
+
+    .panel {
+      background: var(--panel-bg);
+      padding: 40px 60px;
+      border-radius: 20px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .toggle-container {
+      display: flex;
+      gap: 10px;
+      background: rgba(0,0,0,0.1);
+      padding: 5px;
+      border-radius: 30px;
+      margin-bottom: 20px;
+    }
+
+    .toggle-btn {
+      padding: 10px 20px;
+      margin: 0;
+      font-size: 1rem;
+      background: transparent;
+      color: var(--text-color) !important;
+      border-radius: 25px;
+      box-shadow: none;
+    }
+
+    .toggle-btn.active { background: var(--accent); color: #fff !important; }
+    [data-theme="dark"] .toggle-btn.active { color: #0f172a !important; }
+
+    #game-hud {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .hud-top {
+      position: absolute;
+      top: 20px; left: 30px; right: 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      pointer-events: auto;
+    }
+
+    .hud-stat { font-size: 1.5rem; font-weight: 500; }
+    .hud-stat span { font-weight: 800; font-size: 2rem; color: var(--accent); }
+
+    #round-score-display {
+      position: absolute;
+      top: 80px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 3.5rem;
+      font-weight: 800;
+      opacity: 0.9;
+    }
+
+    #input-container {
+      position: absolute;
+      bottom: 50px; left: 50%;
+      transform: translateX(-50%);
+      pointer-events: auto;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    input {
+      padding: 15px 30px;
+      font-size: 1.5rem;
+      font-family: 'Outfit', sans-serif;
+      border-radius: 50px;
+      border: 2px solid rgba(128,128,128,0.2);
+      background: var(--input-bg);
+      color: var(--text-color);
+      outline: none;
+      text-align: center;
+      width: 400px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      transition: all 0.3s ease;
+    }
+
+    input:focus { border-color: var(--accent); }
+
+    .result-title { font-size: 2.5rem; margin-bottom: 0; }
+    .result-country { font-size: 2rem; color: var(--accent); font-weight: 800; margin: 10px 0 20px 0;}
+    .breakdown { font-size: 1.2rem; text-align: left; background: rgba(0,0,0,0.1); padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+    .breakdown div { margin: 5px 0; display: flex; justify-content: space-between; gap: 40px;}
+    .total-line { font-weight: 800; font-size: 1.5rem; color: var(--accent); border-top: 1px solid rgba(128,128,128,0.3); padding-top: 10px; margin-top: 10px !important;}
+  </style>
+</head>
+<body data-theme="dark">
+
+  <div id="map-container"><svg id="map"></svg></div>
+
+  <!-- Main Menu -->
+  <div id="main-menu" class="screen">
+    <h1>Coastline Catch</h1>
+    <p>Identify the highlighted country before the map zooms out.</p>
+    <div>
+      <button id="play-btn" disabled>Loading Data...</button>
+      <button id="practice-btn" class="btn-secondary" disabled>Practice Mode</button>
+    </div>
+    <div style="margin-top: 20px;">
+      <button class="btn-secondary" style="padding: 10px 20px; font-size: 1rem;" onclick="showScreen('settings-screen')">Settings</button>
+    </div>
+  </div>
+
+  <!-- Settings Menu -->
+  <div id="settings-screen" class="screen panel hidden">
+    <h2>Settings</h2>
+    <div><span style="font-weight:800; margin-bottom:10px; display:block;">Difficulty</span></div>
+    <div class="toggle-container" id="difficulty-toggle">
+      <button class="toggle-btn active" onclick="setDifficulty('normal')">Normal (Sovereign)</button>
+      <button class="toggle-btn" onclick="setDifficulty('hard')">Hard (All Territories)</button>
+    </div>
+    
+    <div><span style="font-weight:800; margin-bottom:10px; display:block;">Theme</span></div>
+    <div class="toggle-container" id="theme-toggle">
+      <button class="toggle-btn active" onclick="setTheme('dark')">Dark</button>
+      <button class="toggle-btn" onclick="setTheme('light')">Light</button>
+    </div>
+
+    <button onclick="showScreen('main-menu')">Back to Menu</button>
+  </div>
+
+  <!-- Game HUD -->
+  <div id="game-hud" class="screen hidden">
+    <div class="hud-top">
+      <div class="hud-stat" id="round-display">Round: <span id="round-val">1/6</span></div>
+      <div class="hud-stat">Total: <span id="total-score-val">0</span></div>
+    </div>
+    <div id="round-score-display">1000</div>
+    
+    <div id="input-container">
+      <input type="text" id="guess-input" placeholder="Type country name..." autocomplete="off">
+      <button class="btn-danger" onclick="skipRound()">Skip</button>
+      <button id="exit-practice-btn" class="btn-danger hidden" onclick="endGame(true)">Exit & Save</button>
+    </div>
+  </div>
+
+  <!-- Round Summary Screen -->
+  <div id="round-screen" class="screen panel hidden">
+    <h2 class="result-title" id="round-title">Caught It!</h2>
+    <div class="result-country" id="round-country">Country Name</div>
+    <p>Points Earned: <span id="round-points" style="font-weight:800;">0</span></p>
+    <button onclick="nextRound()">Next Round</button>
+  </div>
+
+  <!-- Final Game Summary Screen -->
+  <div id="end-screen" class="screen panel hidden">
+    <h1 id="final-title">Game Complete!</h1>
+    <div class="breakdown">
+      <div><span>Rounds Played:</span> <span id="stat-rounds">6</span></div>
+      <div><span>Base Score:</span> <span id="stat-base">0</span></div>
+      <div id="hard-bonus-row"><span>Hard Mode Bonus (x1.5):</span> <span id="stat-bonus">+0</span></div>
+      <div class="total-line"><span>Final Score:</span> <span id="stat-final">0</span></div>
+    </div>
+    <button onclick="returnToMenu()">Main Menu</button>
+  </div>
+
+  <script>
+    let allTargets = [];
+    
+    // Expanded alias dictionary handling alternative language names and common variants
+    const aliasDictionary = {
+      "United States of America": ["usa", "us", "united states", "america"],
+      "United Kingdom": ["uk", "britain", "great britain", "england"],
+      "Russian Federation": ["russia"],
+      "South Korea": ["korea", "republic of korea"],
+      "North Korea": ["dprk", "democratic peoples republic of korea"],
+      "Democratic Republic of the Congo": ["drc", "congo"],
+      "United Arab Emirates": ["uae"],
+      "Central African Republic": ["car"],
+      "Côte d'Ivoire": ["cote d'ivoire", "ivory coast", "cote divoire"],
+      "Timor-Leste": ["timor leste", "east timor", "timorleste"],
+      "Czech Republic": ["czechia", "czech republic"],
+      "Eswatini": ["swaziland", "eswatini"]
+    };
+
+    const territoryExclusions = [
+      "Antarctica", "Greenland", "Falkland Is.", "Puerto Rico", "New Caledonia", 
+      "French Southern and Antarctic Lands", "Svalbard", "W. Sahara", "Fr. Polynesia"
+    ];
+
+    let currentDifficulty = 'normal';
+    let worldFeatures = null;
+    let animationId;
+    
+    let isPractice = false;
+    let currentRound = 1;
+    const maxRounds = 6;
+    let totalScore = 0;
+    let roundScore = 1000;
+    let currentTarget = null;
+    let lastTargetName = "";
+    
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const endScale = 400; 
+    let currentScale = 15000;
+    
+    const svg = d3.select("#map").attr("width", width).attr("height", height);
+    const projection = d3.geoMercator().translate([width / 2, height / 2]);
+    const pathGenerator = d3.geoPath().projection(projection);
+
+    // Normalizer helper: strips accents, lowercases, and cleans up punctuation/spaces
+    function normalizeText(text) {
+      if (!text) return "";
+      return text
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "") // Strip diacritics/accents
+        .toLowerCase()
+        .replace(/['\-,\.\s]/g, ""); // Strip spaces, hyphens, quotes, periods for robust matching
+    }
+
+    // --- Initialization ---
+    d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json").then(data => {
+      worldFeatures = topojson.feature(data, data.objects.countries).features;
+      
+      worldFeatures.forEach(feature => {
+        if (feature.properties && feature.properties.name) {
+          const name = feature.properties.name;
+          allTargets.push({
+            name: name,
+            mapName: name,
+            feature: feature,
+            aliases: aliasDictionary[name] || []
+          });
+        }
+      });
+
+      projection.scale(endScale).center([0, 20]);
+      svg.selectAll("path")
+        .data(worldFeatures)
+        .enter().append("path")
+        .attr("d", pathGenerator);
+
+      const playBtn = document.getElementById("play-btn");
+      playBtn.textContent = "Play Standard (6 Rounds)";
+      playBtn.disabled = false;
+      playBtn.addEventListener("click", () => startSession(false));
+
+      const practiceBtn = document.getElementById("practice-btn");
+      practiceBtn.disabled = false;
+      practiceBtn.addEventListener("click", () => startSession(true));
+    });
+
+    function showScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+      document.getElementById(screenId).classList.remove('hidden');
+    }
+
+    function setDifficulty(level) {
+      currentDifficulty = level;
+      const btns = document.getElementById('difficulty-toggle').children;
+      btns[0].classList.toggle('active', level === 'normal');
+      btns[1].classList.toggle('active', level === 'hard');
+    }
+
+    function setTheme(theme) {
+      document.body.setAttribute('data-theme', theme);
+      const btns = document.getElementById('theme-toggle').children;
+      btns[0].classList.toggle('active', theme === 'dark');
+      btns[1].classList.toggle('active', theme === 'light');
+    }
+
+    function startSession(practice) {
+      isPractice = practice;
+      currentRound = 1;
+      totalScore = 0;
+      lastTargetName = "";
+      document.getElementById("total-score-val").textContent = "0";
+      document.getElementById("exit-practice-btn").classList.toggle("hidden", !isPractice);
+      nextRound();
+    }
+
+    function nextRound() {
+      showScreen('game-hud');
+      document.getElementById("map-container").style.opacity = "1"; 
+      
+      document.getElementById("round-val").textContent = isPractice ? currentRound : `${currentRound}/${maxRounds}`;
+      
+      const inputField = document.getElementById("guess-input");
+      inputField.value = "";
+      inputField.focus();
+
+      let validTargets = allTargets;
+      if (currentDifficulty === 'normal') {
+        validTargets = allTargets.filter(t => !territoryExclusions.includes(t.name));
+      }
+      
+      do {
+        currentTarget = validTargets[Math.floor(Math.random() * validTargets.length)];
+      } while (currentTarget.name === lastTargetName && validTargets.length > 1);
+      
+      lastTargetName = currentTarget.name;
+      
+      roundScore = 1000;
+
+      // --- DYNAMIC ZOOM CALCULATION USING FITSIZE ---
+      // 1. Create a temporary projection that fits this specific country bounding box into the window
+      const tempProj = d3.geoMercator().fitSize([width, height], currentTarget.feature);
+      const fitScale = tempProj.scale();
+      
+      // 2. Apply a multiplier: Hard mode starts tighter/more zoomed in than Normal mode
+      const zoomMultiplier = currentDifficulty === 'hard' ? 6.0 : 3.5;
+      currentScale = fitScale * zoomMultiplier;
+
+      // 3. Set main projection scale and center based on the feature's geometric center
+      const centroid = d3.geoCentroid(currentTarget.feature);
+      projection.center(centroid).scale(currentScale);
+      
+      svg.selectAll("path")
+         .attr("d", pathGenerator)
+         .classed("target-country", d => d.properties && d.properties.name === currentTarget.mapName);
+
+      if(animationId) cancelAnimationFrame(animationId);
+      lastTime = performance.now();
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    let lastTime = 0;
+    function gameLoop(time) {
+      const deltaTime = time - lastTime;
+      lastTime = time;
+
+      if (roundScore > 0) {
+        roundScore -= (10 * (deltaTime / 1000));
+        document.getElementById("round-score-display").textContent = Math.max(0, Math.floor(roundScore));
+      } else {
+        handleRoundEnd(false);
+        return; 
+      }
+
+      if (currentScale > endScale) {
+        const zoomSpeed = currentScale * 0.0008; 
+        currentScale -= zoomSpeed * (deltaTime / 16); 
+        projection.scale(Math.max(endScale, currentScale));
+        svg.selectAll("path").attr("d", pathGenerator);
+      }
+
+      animationId = requestAnimationFrame(gameLoop);
+    }
+
+    function skipRound() {
+      roundScore = 0;
+      handleRoundEnd(false);
+    }
+
+    function handleRoundEnd(isWin) {
+      cancelAnimationFrame(animationId);
+      svg.selectAll("path").classed("target-country", false); 
+      
+      const earned = isWin ? Math.floor(roundScore) : 0;
+      totalScore += earned;
+      document.getElementById("total-score-val").textContent = totalScore;
+
+      if (!isPractice && currentRound >= maxRounds) {
+        endGame(false);
+      } else {
+        showScreen('round-screen');
+        document.getElementById("map-container").style.opacity = "0.3";
+        
+        const title = document.getElementById("round-title");
+        title.textContent = isWin ? "Caught It!" : "Time's Up!";
+        title.style.color = isWin ? "var(--success)" : "var(--danger)";
+        
+        document.getElementById("round-country").textContent = currentTarget.name;
+        document.getElementById("round-points").textContent = earned;
+        currentRound++;
+      }
+    }
+
+    function endGame(fromPracticeExit = false) {
+      cancelAnimationFrame(animationId);
+      svg.selectAll("path").classed("target-country", false); 
+      showScreen('end-screen');
+      document.getElementById("map-container").style.opacity = "0.3"; 
+
+      document.getElementById("final-title").textContent = (isPractice || fromPracticeExit) ? "Practice Summary" : "Game Complete!";
+      document.getElementById("stat-rounds").textContent = isPractice ? (currentRound - 1) : maxRounds;
+      document.getElementById("stat-base").textContent = totalScore;
+
+      const bonusRow = document.getElementById("hard-bonus-row");
+      let finalScore = totalScore;
+
+      if (currentDifficulty === 'hard' && totalScore > 0) {
+        bonusRow.style.display = "flex";
+        const bonus = Math.floor(totalScore * 0.5);
+        document.getElementById("stat-bonus").textContent = `+${bonus}`;
+        finalScore += bonus;
+      } else {
+        bonusRow.style.display = "none";
+      }
+
+      document.getElementById("stat-final").textContent = finalScore;
+    }
+
+    function returnToMenu() {
+      showScreen('main-menu');
+      projection.scale(endScale).center([0, 20]);
+      svg.selectAll("path").attr("d", pathGenerator);
+    }
+
+    // --- Normalized Input Validation ---
+    document.getElementById("guess-input").addEventListener("input", (e) => {
+      if (!currentTarget) return;
+      
+      const userGuess = normalizeText(e.target.value);
+      if (!userGuess) return;
+
+      const targetNormalized = normalizeText(currentTarget.name);
+      
+      // Check main name
+      if (userGuess === targetNormalized) {
+        handleRoundEnd(true);
+        return;
+      }
+
+      // Check aliases
+      const normalizedAliases = (currentTarget.aliases || []).map(alias => normalizeText(alias));
+      if (normalizedAliases.includes(userGuess)) {
+        handleRoundEnd(true);
+      }
+    });
+
+    window.addEventListener('resize', () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      svg.attr("width", w).attr("height", h);
+      projection.translate([w / 2, h / 2]);
+      if(!animationId) svg.selectAll("path").attr("d", pathGenerator);
+    });
+  </script>
+</body>
+</html>
