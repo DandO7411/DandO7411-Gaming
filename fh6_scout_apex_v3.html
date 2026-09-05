@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FH6 Eliminator Scout - Apex Edition</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        :root { --main: #caff03; --accent: #e529a1; --accent-light: rgba(229, 41, 161, 0.15); --bg: #0a0a0a; --panel: rgba(10, 2, 8, 0.96); }
+        body, html { margin: 0; padding: 0; height: 100%; background: var(--bg); font-family: 'Segoe UI', sans-serif; overflow: hidden; color: white; }
+        
+        /* HOME MENU WITH IMAGE AND TEXTURE */
+        #mainMenu {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            /* Explicitly set image_67d672.png as the base */
+            background: url('image_67d672.png') center/cover no-repeat;
+            z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Polygon Overlay for the FH6 marketing texture */
+        .bg-texture {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1; opacity: 0.5; pointer-events: none;
+        }
+
+        .menu-card {
+            background: rgba(0, 0, 0, 0.85); padding: 50px; border-radius: 4px;
+            border: 2px solid var(--accent); text-align: center; 
+            box-shadow: 0 0 60px rgba(229, 41, 161, 0.5);
+            position: relative; z-index: 10; backdrop-filter: blur(8px);
+        }
+        
+        .logo-large { width: 340px; margin-bottom: 25px; filter: drop-shadow(0 0 15px var(--main)); }
+
+        /* MAP AND UI */
+        #settingsModal {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 350px; background: var(--panel); border: 2px solid var(--main);
+            z-index: 10001; padding: 25px; display: none; border-radius: 4px; box-shadow: 0 0 100px rgba(0,0,0,1);
+        }
+
+        #map { height: 100vh; width: 100vw; background: #000; visibility: hidden; }
+
+        .ui-container { 
+            position: absolute; top: 20px; left: 20px; z-index: 1000; 
+            display: none; width: 340px; max-height: calc(100vh - 40px); 
+            pointer-events: none; 
+        }
+        
+        .panel { 
+            background: var(--panel); backdrop-filter: blur(15px); 
+            border-left: 5px solid var(--accent); border-right: 2px solid var(--main);
+            padding: 15px; border-radius: 4px; pointer-events: auto; 
+            box-shadow: 0 10px 40px rgba(229, 41, 161, 0.3);
+            display: flex; flex-direction: column; height: 100%; max-height: 90vh;
+        }
+
+        .panel-header { padding-bottom: 15px; border-bottom: 2px solid var(--main); display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .logo-img { width: 45px; height: 45px; border: 1px solid var(--accent); }
+        .title-text { font-size: 0.8rem; margin: 0; color: var(--main); font-weight: 800; letter-spacing: 1px; }
+        .subtitle-text { color: var(--accent); font-size: 0.65rem; font-weight: bold; letter-spacing: 2px; }
+
+        .panel-controls { display: flex; gap: 6px; margin-bottom: 10px; }
+        .panel-log-container { flex-grow: 1; overflow-y: auto; margin-bottom: 10px; padding-right: 5px; }
+        .panel-log-container::-webkit-scrollbar { width: 4px; }
+        .panel-log-container::-webkit-scrollbar-thumb { background: var(--main); }
+
+        .panel-analyst { background: rgba(0,0,0,0.5); border: 1px solid var(--accent); padding: 12px; border-radius: 4px; margin-bottom: 10px; }
+
+        .m-btn { 
+            flex: 1; padding: 10px; border: 2px solid var(--accent); background: transparent; 
+            color: var(--accent); cursor: pointer; font-size: 0.7rem; font-weight: 800; 
+            text-transform: uppercase; transition: 0.2s; border-radius: 2px;
+        }
+        .m-btn:hover { background: var(--accent); color: #fff; transform: skewX(-5deg); }
+        .m-btn.active { background: var(--accent); color: white; }
+        .btn-main { border-color: var(--main); color: var(--main); }
+        .btn-main:hover { background: var(--main); color: #000; }
+
+        .log-item { 
+            display: flex; align-items: center; justify-content: space-between; 
+            padding: 8px; margin-bottom: 5px; background: rgba(229, 41, 161, 0.1); 
+            font-size: 0.75rem; border-left: 3px solid var(--main);
+        }
+
+        .avg-icon { 
+            background: #000; border: 2px solid var(--main); border-radius: 50%; 
+            color: white; font-weight: bold; display: flex; align-items: center; justify-content: center;
+        }
+
+        .analyst-text { font-family: 'Courier New', monospace; font-size: 0.65rem; color: #0f0; margin-bottom: 8px; line-height: 1.2; }
+        
+        .apex-target-dot {
+            width: 12px; height: 12px; background: #fff; border-radius: 50%;
+            box-shadow: 0 0 15px #fff, 0 0 30px var(--accent);
+            animation: apex-blink 0.5s infinite alternate;
+        }
+        @keyframes apex-blink { from { opacity: 0.4; } to { opacity: 1; } }
+
+        .settings-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 0.85rem; color: var(--main); }
+        .reset-danger { background: #400; border: 1px solid var(--accent); color: #fff; padding: 10px; width: 100%; cursor: pointer; font-weight: bold; margin-top: 20px; }
+        
+        .lvl-picker { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 5px; }
+        .lvl-btn { border: none; padding: 10px 0; cursor: pointer; font-weight: bold; border-radius: 2px; }
+    </style>
+</head>
+<body>
+
+<div id="mainMenu">
+    <svg class="bg-texture" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <polygon points="0,0 40,0 20,35" fill="rgba(229, 41, 161, 0.15)" />
+        <polygon points="100,0 55,0 85,45" fill="rgba(229, 41, 161, 0.12)" />
+        <polygon points="0,100 35,100 15,65" fill="rgba(229, 41, 161, 0.18)" />
+        <polygon points="100,100 65,100 95,55" fill="rgba(229, 41, 161, 0.1)" />
+        <polygon points="45,15 75,55 25,55" fill="rgba(229, 41, 161, 0.08)" />
+    </svg>
+
+    <div class="menu-card">
+        <img src="image_67e8dc.jpg" class="logo-large">
+        <div style="display: flex; flex-direction: column; gap: 15px;">
+            <button class="m-btn btn-main" style="font-size: 1.2rem; padding: 15px;" onclick="startGame()">Start Scouting</button>
+            <button class="m-btn" onclick="toggleSettings(true)">System Config</button>
+        </div>
+    </div>
+</div>
+
+<div id="settingsModal">
+    <h2 style="color:var(--accent); text-transform: uppercase; font-style: italic; margin-top: 0; letter-spacing: 2px;">Telemetry Settings</h2>
+    <div class="settings-row"><span>Show Avg on Map</span><input type="checkbox" id="set-showLabels" checked onchange="refreshUI()"></div>
+    <div class="settings-row"><span>Map Saturation</span><input type="range" id="set-saturation" min="0" max="200" value="100" onchange="applyFilters()"></div>
+    <div class="settings-row"><span>Marker Size</span><input type="range" id="set-size" min="15" max="40" value="26" onchange="refreshUI()"></div>
+    <button class="m-btn btn-main" style="width: 100%;" onclick="toggleSettings(false)">Apply & Close</button>
+    <button class="reset-danger" onclick="clearAll()">Format Intel Core</button>
+</div>
+
+<div id="map"></div>
+
+<div class="ui-container" id="gameUI">
+    <div class="panel">
+        <div class="panel-header">
+            <img src="image_67e8dc.jpg" class="logo-img">
+            <div>
+                <h1 class="title-text">FH6 ELIMINATOR SCOUT</h1>
+                <div class="subtitle-text">APEX ANALYST v3.0</div>
+            </div>
+        </div>
+
+        <div class="panel-controls">
+            <button class="m-btn active" id="btnCreate" onclick="setMode('create')">Plot (Q)</button>
+            <button class="m-btn" id="btnSelect" onclick="setMode('select')">Edit (W)</button>
+        </div>
+
+        <div class="panel-log-container" id="dropLog"></div>
+
+        <div class="panel-analyst">
+            <div id="analystChat" class="analyst-text">> STANDBY: DATA NEEDED</div>
+            <button class="m-btn btn-main" style="width: 100%; font-size: 0.6rem;" onclick="runApexAnalysis()">Calculate Start Location</button>
+        </div>
+
+        <div style="display: flex; gap: 5px;">
+            <button class="m-btn" style="border-color: #444; color: #888;" onclick="toggleSettings(true)">Settings</button>
+            <button class="m-btn" style="border-color: #444; color: #888;" onclick="exitToMenu()">Exit</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let mode = 'create';
+    let dropData = JSON.parse(localStorage.getItem('fh6_scout_v3_pink')) || [];
+    let mapMarkers = [];
+    let apexMarker = null;
+    const levelColors = {1:"#fff", 2:"#c1ffc1", 3:"#82ff82", 4:"#39ff14", 5:"#00f2ff", 6:"#0072ff", 7:"#7a00ff", 8:"#ff00d4", 9:"#ff0000", 10:"#ffcc00"};
+
+    const map = L.map('map', { crs: L.CRS.Simple, minZoom: -2, zoomControl: false });
+    const bounds = [[0,0], [1000,1000]];
+    L.imageOverlay('fh6-map.jpg', bounds).addTo(map);
+    map.fitBounds(bounds);
+
+    function startGame() {
+        document.getElementById('mainMenu').style.display = 'none';
+        document.getElementById('map').style.visibility = 'visible';
+        document.getElementById('gameUI').style.display = 'block';
+        refreshUI();
+        map.invalidateSize();
+    }
+
+    function exitToMenu() {
+        document.getElementById('mainMenu').style.display = 'flex';
+        document.getElementById('gameUI').style.display = 'none';
+        document.getElementById('map').style.visibility = 'hidden';
+    }
+
+    function toggleSettings(show) { document.getElementById('settingsModal').style.display = show ? 'block' : 'none'; }
+
+    function applyFilters() {
+        const sat = document.getElementById('set-saturation').value;
+        const mapImg = document.querySelector('.leaflet-image-layer');
+        if(mapImg) mapImg.style.filter = `saturate(${sat}%)`;
+    }
+
+    function setMode(m) {
+        mode = m;
+        document.getElementById('btnCreate').classList.toggle('active', m === 'create');
+        document.getElementById('btnSelect').classList.toggle('active', m === 'select');
+    }
+
+    map.on('click', (e) => { if(mode === 'create') openPicker(e.latlng, null); });
+
+    function openPicker(latlng, index) {
+        const content = `<div class="lvl-picker">${Object.keys(levelColors).map(l => 
+            `<button class="lvl-btn" style="background:${levelColors[l]}" onclick="addEntry(${latlng.lat}, ${latlng.lng}, ${l}, ${index})">${l}</button>`
+        ).join('')}</div>`;
+        L.popup().setLatLng(latlng).setContent(content).openOn(map);
+    }
+
+    window.addEntry = (lat, lng, lvl, index) => {
+        map.closePopup();
+        if(index === null) dropData.push({ lat, lng, history: [lvl] });
+        else dropData[index].history.push(lvl);
+        save();
+    };
+
+    function save() {
+        localStorage.setItem('fh6_scout_v3_pink', JSON.stringify(dropData));
+        refreshUI();
+    }
+
+    function refreshUI() {
+        mapMarkers.forEach(m => map.removeLayer(m));
+        mapMarkers = [];
+        const log = document.getElementById('dropLog');
+        log.innerHTML = '';
+        
+        const showLabels = document.getElementById('set-showLabels').checked;
+        const size = parseInt(document.getElementById('set-size').value);
+
+        dropData.forEach((data, i) => {
+            const avg = (data.history.reduce((a,b) => a+b, 0) / data.history.length).toFixed(1);
+            const color = levelColors[Math.round(avg)];
+            
+            const marker = L.marker([data.lat, data.lng], {
+                icon: L.divIcon({
+                    className: 'c-icon',
+                    html: `<div class="avg-icon" style="border-color:${color}; width:${size}px; height:${size}px; font-size:${size/2.5}px;">${showLabels ? avg : ''}</div>`,
+                    iconSize: [size, size],
+                    iconAnchor: [size/2, size/2]
+                })
+            }).addTo(map);
+
+            marker.on('click', (e) => { 
+                L.DomEvent.stopPropagation(e);
+                if(mode === 'select') openPicker(marker.getLatLng(), i); 
+            });
+            mapMarkers.push(marker);
+
+            const item = document.createElement('div');
+            item.className = 'log-item';
+            item.innerHTML = `<span>#${i+1} • TIER <b style="color:var(--main)">${avg}</b></span><button style="color:var(--accent); background:none; border:none; cursor:pointer; font-weight:bold; font-size:1.1rem;" onclick="deleteItem(${i})">×</button>`;
+            log.appendChild(item);
+        });
+    }
+
+    window.deleteItem = (i) => { if(confirm("Delete point?")) { dropData.splice(i, 1); save(); } };
+    function clearAll() { if(confirm("WIPE DATABASE?")) { dropData=[]; save(); toggleSettings(false); } }
+
+    function runApexAnalysis() {
+        const chat = document.getElementById('analystChat');
+        if (dropData.length < 2) {
+            chat.innerHTML = "> ERROR: INSUFFICIENT INTEL";
+            return;
+        }
+        chat.innerHTML = "> SCANNING FOR APEX TIERS...";
+
+        setTimeout(() => {
+            let totalW = 0, latW = 0, lngW = 0;
+            
+            dropData.forEach(d => {
+                const avg = d.history.reduce((a,b) => a+b, 0) / d.history.length;
+                const weight = Math.pow(avg, 5); 
+                latW += d.lat * weight;
+                lngW += d.lng * weight;
+                totalW += weight;
+            });
+
+            const finalLat = latW / totalW;
+            const finalLng = lngW / totalW;
+
+            if (apexMarker) map.removeLayer(apexMarker);
+            apexMarker = L.marker([finalLat, finalLng], {
+                icon: L.divIcon({ className: 'apex-target-dot', iconSize: [12, 12], iconAnchor: [6, 6] }),
+                zIndexOffset: 1000
+            }).addTo(map);
+
+            map.flyTo([finalLat, finalLng], 0);
+            chat.innerHTML = `> APEX POSITION CALCULATED.<br>> [Y: ${Math.round(finalLat)} X: ${Math.round(finalLng)}]`;
+        }, 400);
+    }
+
+    window.addEventListener('keydown', (e) => {
+        if(e.key.toLowerCase()==='q') setMode('create');
+        if(e.key.toLowerCase()==='w') setMode('select');
+    });
+
+    refreshUI();
+</script>
+</body>
+</html>
